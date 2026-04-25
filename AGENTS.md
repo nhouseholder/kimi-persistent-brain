@@ -4,15 +4,53 @@
 
 You are in a NEW SESSION. Before typing a single word to the user, you MUST execute this protocol. This is not optional. This is not "if you remember." This is MANDATORY.
 
+**CORE PRINCIPLE: GENERATE ONCE, REUSE FOREVER.**
+The codebase diagram is generated **one time per project** and stored in Engram under `topic_key="codebase/diagram/{PROJECT_NAME}"`. Future sessions load it from memory instantly. You only re-run CGC indexing if the diagram is stale or missing.
+
+**Decision Tree (execute in order — do not skip steps):**
+
 ```
 STEP 1: mem_session_start(id=THIS_SESSION_ID, project=PROJECT_NAME, directory=PWD)
+    ↓
 STEP 2: mem_context
+    ↓
 STEP 3: mem_search(query="codebase diagram", topic_key="codebase/diagram/{PROJECT_NAME}")
-STEP 4: If found → mem_get_observation(id=FOUND_ID) → load the diagram
-STEP 5: If NOT found → cgc stats . → cgc analyze complexity --limit 10 → cgc analyze dead-code → synthesize → mem_save(topic_key="codebase/diagram/{PROJECT_NAME}", type="architecture")
+    ↓
+    ├─ DIAGRAM FOUND?
+    │   ├─ YES → mem_get_observation(id=FOUND_ID) to load full diagram
+    │   │        Check freshness (see STALE CRITERIA below)
+    │   │        ├─ FRESH → Use it. Go to STEP 6.
+    │   │        └─ STALE → Go to STEP 4 (regenerate + overwrite same topic_key)
+    │   └─ NO  → Go to STEP 4 (generate once)
+    ↓
+STEP 4: GENERATE / REGENERATE DIAGRAM
+    **Primary method (CLI — no approval timeouts):**
+    - Run via Shell: cgc index . --force
+    - cgc stats
+    - cgc analyze complexity --limit 10
+    - cgc analyze dead-code
+    - Synthesize results into diagram format
+    - Save to Engram: mem_save(topic_key="codebase/diagram/{PROJECT_NAME}", type="architecture")
+    - **Fallback if mem_save times out:** Write diagram to CODEBASE_DIAGRAM.md in project root
+    **MCP method (only if CLI unavailable):**
+    - discover_codegraph_contexts → add_code_to_graph if needed
+    - switch_context → get_repository_stats → find_most_complex_functions → find_dead_code
+    - mem_save
+    ↓
+STEP 5: CHECK LOCAL FALLBACK
+    - If Engram diagram missing AND CODEBASE_DIAGRAM.md exists in project root → load and use it
+    ↓
 STEP 6: discover_codegraph_contexts → switch_context to current project
+    ↓
 STEP 7: NOW respond to user WITH codebase context already loaded
 ```
+
+**STALE CRITERIA — Only regenerate if ANY of these are true:**
+1. **Age**: Diagram is > 7 days old
+2. **Major refactor**: New top-level dirs (>1), framework/build system changed, >20% file churn, new API layer/database, auth/deployment architecture changed
+3. **CGC context mismatch**: Repo not indexed or context pointing elsewhere
+
+**If NONE of the above are true → diagram is FRESH. Use it. Do NOT regenerate.**
 
 **If you skip steps 1-6, you are flying blind. The diagram is your map. Past context is your compass. Execute the protocol. NOW.**
 
